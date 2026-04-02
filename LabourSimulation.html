@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<hmtl lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Labour Market Simulation</title>
+    <style>
+        *{ box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, sans-serif;
+            background: #f5f5f2;
+            color: #1a1a18;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Sliders */
+        .controls-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .ctrl-label {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .ctrl-val {
+            font-weight: 500;
+            color: #1a1a18;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: #378ADD;
+            cursor: pointer;
+        }
+
+        /* Metric cards */
+        .metrics-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .metric {
+            flex: 1;
+            min-width: 120px;
+            background: #ebebea;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .metric-val {
+            font-size: 22px;
+            font-weight: 500;
+        }
+
+        .metric-val.neg { color: #D85A30; }
+        .metric-val.pos { color: #1D9E75; }
+        .metric-val.neu { color: #1a1a18; }
+
+        /* Chart */
+        .chart-area {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            background: #fff;
+            border: 0.5px solid #d3d1c7;
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 0.75rem;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .leg-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            display: inline-block;
+        }
+
+        /* Phase bar */
+        .phase-bar {
+            height: 4px;
+            border-radius: 2px;
+            background: #ebebea;
+            margin-top: 1.25rem;
+            overflow: hidden;
+        }
+
+        .phase-fill {
+            height: 100%;
+            border-radius: 2px;
+            background: #1D9E75;
+            transition: width 0.3s ease;
+        }
+
+        .phase-label {
+            font-size: 11px;
+            color: #b4b2a9;
+            margin-top: 4px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>AI &amp; Labour Market Simulation</h1>
+    <p class="subtitle">Based on Acemoglu &amp; Autor's task-based labour model</p>
+
+    <!-- Sliders -->
+     <div class="controls-row">
+        <div class="ctrl-group">
+            <div class="ctrl-label">
+                Automation effect
+                <span class="ctrl-val" id="auto-val">-0.40</span>
+            </div>
+            <input type="range" min="10" max="80" step="1" value="40" id="auto-slider">
+        </div>
+        <div class="ctrl-group">
+            <div class="ctrl-label">
+                Productivity effect
+                <span class="ctrl-val" id="prod-val">+0.25</span>
+            </div>
+            <input type="range" min="5" max="70" step="1" value="25" id="prod-slider">
+        </div>
+     </div>
+
+     <!--Metric Cards-->
+     <div class="metrics-row">
+        <div class="metric">
+            <div class="metric-label">Net effect @ full adoption</div>
+            <div class="metric-val neg" id="net-metric">-0.15</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Break-even adoption</div>
+            <div class="metric-val neu" id="breakeven-metric">N/A</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Dominant force</div>
+            <div class="metric-val neg" id="dominant-metric" style="font-size:14px; padding-top:4px">Automation</div>
+        </div>
+     </div>
+
+     <!-- Chart -->
+     <div class="chart-area">
+        <canvas id="simChart"></canvas>
+     </div>
+
+     <!-- Legend -->
+      <div class="legend">
+        <span style="display:flex;align-items:center;gap:6px">
+            <span class="leg-dot" style="background:#D85A30"></span>Automation effect
+        </span>
+        <span style="display:flex;align-items:center;gap:6px">
+            <span class="leg-dot" style="background:#1D9E75"></span>Productivity effect
+        </span>
+        <span style="display:flex;align-items:center;gap:6px">
+            <span class="leg-dot" style="background:#378ADD"></span>Net employment effect
+        </span>
+      </div>
+
+      <!-- Phase Bar -->
+       <div class="phase-bar">
+        <div class="phase-fill" id="prod-dominance" style="width:0%"></div>
+       </div>
+       <div class="phase-label" id="phase-text">Automation dominates throughout</div>
+
+       <!-- Chart.js from CDN -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+        <script>
+            // --- 1. Data generation -----------------------
+            // 100 evenly spaced AI adoption values from 0.00 to 1.00
+            const N = 100;
+            const AI = Array.from({ length: N }, (_, i) => +(i / (N - 1)).toFixed(2));
+
+            function buildData(autoRate, prodRate) {
+                return {
+                    auto: AI.map(a => +(-autoRate * a).toFixed(3)), // negative: destroys jobs
+                    prod: AI.map(a => +(prodRate * a).toFixed(3)), // positive: creates jobs
+                    net: AI.map(a => +((prodRate - autoRate) * a).toFixed(3))
+                };
+            }
+
+            // --- 2. Initialise Chart.js -----------------------------------------------------------------
+            let autoRate = 0.40;
+            let prodRate = 0.25;
+            let d = buildData(autoRate, prodRate);
+
+            const ctx = document.getElementById('simChart').getContext('2d');
+
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: AI.map(v => v.toFixed(2)),
+                    datasets: [
+                        {
+                            label: 'Automation', 
+                            data: d.auto,
+                            borderColor: '#D85A30',
+                            backgroundColor: 'rgba(216,90,48,0.07)',
+                            fill: true,
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Productivity', 
+                            data: d.prod, 
+                            borderColor: '#1D9E75', 
+                            backgroundColor: 'rgba(29, 158, 117, 0.07)',
+                            fill: true,
+                            borderWidth: 2, 
+                            pointRadius: 0, 
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Net', 
+                            data: d.net,
+                            borderColor: '#378ADD', 
+                            backgroundColor: 'rgba(55, 138, 221, 0.07)',
+                            fill: true,
+                            borderWidth: 2.5, 
+                            pointRadius: 0, 
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false }, // we use our own HTML legend above 
+                        tooltip: {
+                            callbacks: {
+                                title: (items) => 'AI adoption: ' + (parseFloat(items[0].label) * 100).toFixed(0) + '%', 
+                                label: (item) => item.dataset.label + ': ' + (item.raw >= 0 ? '+' : '') + item.raw.toFixed(3)
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'AI adoption level', color: '#888', font: { size: 12 } },
+                            ticks: {
+                                autoSkip: true,
+                                maxTicksLimit: 11,
+                                callback: (v, i) => (i % 10 === 0) ? (AI[i] * 100).toFixed(0) + '%' : '',
+                                color: '#888',
+                                font: { size: 11 }
+                            },
+                            grid: { color: 'rgba(136, 135, 128, 0.15)' }
+                        },
+                        y: {
+                            title: { display: true, text: 'Labour demand change', color: '#888', font: { size: 12 } },
+                            ticks: {
+                                color: '#888',
+                                font: { size: 11 },
+                                callback: v => (v >= 0 ? '+' : '') + v.toFixed(2)
+                            },
+                            grid: { color: 'rgba(136, 135, 128, 0.15)' }
+                        }
+                    }
+                }
+            });
+
+            // ----- 3. Metric card updater ------------------------------------------------
+            function updateMetrics() {
+                const netFull = +(prodRate - autoRate).toFixed(3);
+
+                // Net effect card 
+                const netEl = document.getElementById('net-metric');
+                netEl.textContent = (netFull >= 0 ? '+' : '') + netFull.toFixed(2);
+                netEl.className = 'metric-val ' + (netFull > 0 ? 'pos' : netFull < 0 ? 'neg' : 'neu');
+
+                // Break-even card (for linear models, lines only cross at 0 unless rates are equal)
+                const bkEl = document.getElementById('breakeven-metric');
+                bkEl.textContent = Math.abs(autoRate - prodRate) < 0.001 ? 'All points' : 'Never (linear)';
+
+                // Dominant force card 
+                const domEl = document.getElementById('dominant-metric');
+                if (autoRate > prodRate) {
+                    domEl.textContent = 'Automation';
+                    domEl.className = 'metric-val neg';
+                } else if (prodRate > autoRate) {
+                    domEl.textContent = 'Productivity';
+                    domEl.className = 'metric-val pos';
+                } else {
+                    domEl.textContent = 'Balanced';
+                    domEl.className = 'metric-val neu';
+                }
+
+                // Phase bar (shows how much productivity is "winning")
+                const ratio = Math.min((prodRate / (autoRate + prodRate)) * 100, 100);
+                document.getElementById('prod-dominance').style.width = ratio.toFixed(1) + '%';
+
+                const phaseText = document.getElementById('phase-text');
+                if (autoRate > prodRate) {
+                    phaseText.textContent = 'Automation dominant - net job loss at every adoption level';
+                } else if (prodRate > autoRate) {
+                    phaseText.textContent = 'Productivity dominant - net job creation at every adoption level';
+                } else {
+                    phaseText.textContent = 'Effects perfectly cancel - zero net change';
+                }
+            }
+
+            // --- 4. Redraw chart + metrics ------------------------------------------------------------
+            function refresh() {
+                const d2 = buildData(autoRate, prodRate);
+                chart.data.datasets[0].data = d2.auto;
+                chart.data.datasets[1].data = d2.prod;
+                chart.data.datasets[2].data = d2.net;
+                chart.update('none'); // 'none' skips animation for snappier feel 
+                updateMetrics();
+            }
+
+            // --- 5. Slider event listeners ------------------------------------------------------------
+            document.getElementById('auto-slider').addEventListener('input', e => {
+                autoRate = parseInt(e.target.value) / 100;
+                document.getElementById('auto-val').textContent = '-' + autoRate.toFixed(2);
+                refresh();
+            });
+
+            document.getElementById('prod-slider').addEventListener('input', e => {
+                prodRate = parseInt(e.target.value) / 100;
+                document.getElementById('prod-val').textContent = '+' + prodRate.toFixed(2);
+                refresh();
+            });
+
+            // Initial render
+            updateMetrics();
+        </script>
+</body>
+</hmtl>
